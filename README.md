@@ -35,7 +35,7 @@ Singkatnya: **aplikasi Mixed Reality berbasis ML-powered computer vision**. Komp
 - **Umpan balik status** — pesan jelas jika kamera ditolak, tidak ditemukan, atau browser tidak mendukung.
 - **Tema liquid glass** — HUD berupa panel kaca (blur + rim light), kartu bergaris tepi kaca di canvas, glow lembut, dan latar orb yang bergerak pelan. Animasi dinonaktifkan otomatis saat `prefers-reduced-motion`.
 - **Responsif** — panggung kamera menjaga rasio 4:3, menyesuaikan lebar/tinggi layar, menghormati *safe area* perangkat ber-notch, dan mengecilkan teks pada layar sempit.
-- **Tanpa build step** — satu file HTML, tanpa `npm install`.
+- **Mesin framework-free** — logika kamera, gesture, dan render tidak meng-import Vue, jadi bisa dipakai ulang oleh UI lain.
 
 ---
 
@@ -54,10 +54,12 @@ Singkatnya: **aplikasi Mixed Reality berbasis ML-powered computer vision**. Komp
 
 ## Teknologi
 
-- **HTML5 + CSS + JavaScript vanilla**, render dengan **Canvas 2D**
-- **[MediaPipe Hands](https://developers.google.com/mediapipe)** — model hand landmark detection
-- `@mediapipe/drawing_utils` dan `@mediapipe/camera_utils`
-- Library dimuat via CDN jsDelivr dengan **versi di-pin** (tidak ikut berubah saat upstream update), jadi **butuh koneksi internet** saat runtime
+- **Vue 3 + Vite + TypeScript** untuk shell UI: layout, HUD, dan status.
+- **Canvas 2D** untuk render. Mesin carousel, gesture, dan pipeline kamera berada di `src/engine/` dan **tidak bergantung pada Vue**.
+- **[MediaPipe Hands](https://developers.google.com/mediapipe)** — model hand landmark detection.
+- `@mediapipe/drawing_utils` dan `@mediapipe/camera_utils`.
+- Library MediaPipe dimuat via CDN jsDelivr dengan **versi di-pin** (tidak ikut berubah saat upstream update), jadi **butuh koneksi internet** saat runtime.
+- Rencana berikutnya: migrasi dari legacy Solutions ke `@mediapipe/tasks-vision` dengan model & wasm lokal.
 
 ---
 
@@ -67,12 +69,20 @@ Akses kamera hanya diizinkan pada *secure context* (**localhost** atau **HTTPS**
 
 ```bash
 # dari dalam folder project
-python -m http.server 8000
+npm install
+npm run dev
 ```
 
-Lalu buka <http://localhost:8000> dan izinkan akses kamera saat browser meminta.
+Buka URL yang dicetak Vite (biasanya <http://localhost:5173>) dan izinkan akses kamera saat browser meminta.
 
-Alternatif: gunakan ekstensi **Live Server** di VS Code, atau `npx serve`.
+Untuk memeriksa hasil produksi:
+
+```bash
+npm run build
+npm run preview
+```
+
+`legacy/index.html` adalah arsip versi satu-file sebelum refactor dan tidak dipakai lagi.
 
 **Tips:** pastikan pencahayaan cukup dan tangan terlihat penuh oleh kamera (jarak ideal ±40–80 cm).
 
@@ -94,13 +104,18 @@ Alternatif: gunakan ekstensi **Live Server** di VS Code, atau `npx serve`.
 
 ```text
 .
-├── index.html      # seluruh aplikasi: markup, style, dan logika
-├── img1.jpg        # aset gambar mobil
-├── img2.jpg
-├── img3.jpeg
-├── img4.jpg
-├── img5.jpg
-├── img6.jpg
+├── index.html          # shell Vite
+├── src/
+│   ├── main.ts         # bootstrap Vue
+│   ├── App.vue         # panggung kamera + HUD + status
+│   ├── config.ts       # konstanta carousel
+│   ├── engine/         # mesin carousel: kamera, gesture, render (framework-free)
+│   ├── composables/    # jembatan Vue ↔ engine
+│   ├── styles/         # CSS global
+│   └── types/          # deklarasi MediaPipe legacy (temporer)
+├── public/             # aset gambar mobil
+├── legacy/             # arsip versi satu-file sebelum refactor
+├── netlify.toml        # konfigurasi build & deploy
 └── README.md
 ```
 
