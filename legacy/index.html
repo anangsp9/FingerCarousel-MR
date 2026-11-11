@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#060912" />
+  <meta name="description" content="FingerCarousel-MR — galeri mobil Mixed Reality yang digeser dengan ujung telunjuk di depan kamera." />
+  <title>FingerCarousel-MR</title>
+  <style>
+    :root {
+      --ink: #f4f7ff;
+      --muted: rgba(230, 238, 255, 0.66);
+      --accent: #7ee7ff;
+      --pad: clamp(10px, 2.5vw, 36px);
+      --radius-lg: clamp(18px, 2.5vw, 28px);
+      --radius-sm: clamp(12px, 1.6vw, 18px);
+      --glass-bg: rgba(255, 255, 255, 0.07);
+      --glass-border: rgba(255, 255, 255, 0.16);
+      --glass-blur: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+      background: #060912;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding: var(--pad);
+      padding-top: max(var(--pad), env(safe-area-inset-top));
+      padding-bottom: max(var(--pad), env(safe-area-inset-bottom));
+      padding-left: max(var(--pad), env(safe-area-inset-left));
+      padding-right: max(var(--pad), env(safe-area-inset-right));
+      overflow: hidden;
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(130% 110% at 18% 0%, #131c33 0%, #080c17 42%, #04060d 100%);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ---------- Latar belakang cair ---------- */
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: 0.5;
+      will-change: transform;
+    }
+
+    .orb--1 {
+      width: 44vmax;
+      height: 44vmax;
+      left: -12vmax;
+      top: -16vmax;
+      background: radial-gradient(circle at 32% 32%, #2f6bff, transparent 62%);
+      animation: drift-a 18s ease-in-out infinite alternate;
+    }
+
+    .orb--2 {
+      width: 38vmax;
+      height: 38vmax;
+      right: -10vmax;
+      top: 8vmax;
+      opacity: 0.34;
+      background: radial-gradient(circle at 50% 50%, #00d4ff, transparent 60%);
+      animation: drift-b 22s ease-in-out infinite alternate;
+    }
+
+    .orb--3 {
+      width: 50vmax;
+      height: 50vmax;
+      left: 16vmax;
+      bottom: -28vmax;
+      opacity: 0.36;
+      background: radial-gradient(circle at 50% 50%, #7b3bff, transparent 62%);
+      animation: drift-c 26s ease-in-out infinite alternate;
+    }
+
+    @keyframes drift-a {
+      to { transform: translate3d(6vmax, 4vmax, 0) scale(1.08); }
+    }
+    @keyframes drift-b {
+      to { transform: translate3d(-5vmax, 6vmax, 0) scale(1.12); }
+    }
+    @keyframes drift-c {
+      to { transform: translate3d(4vmax, -6vmax, 0) scale(1.06); }
+    }
+
+    /* ---------- Panggung kamera ---------- */
+    .stage {
+      position: relative;
+      z-index: 1;
+      width: min(100%, 920px);
+      max-width: calc((100vh - (var(--pad) * 2)) * 4 / 3);
+      max-width: calc((100svh - (var(--pad) * 2)) * 4 / 3);
+      aspect-ratio: 4 / 3;
+      isolation: isolate;
+      overflow: hidden;
+      border-radius: var(--radius-lg);
+      background: #070b14;
+      border: 1px solid var(--glass-border);
+      box-shadow:
+        0 20px 40px -18px rgba(0, 0, 0, 0.75),
+        0 50px 110px -40px rgba(0, 0, 0, 0.95),
+        0 0 90px -34px rgba(86, 148, 255, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.16);
+      animation: stage-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    }
+
+    @keyframes stage-in {
+      from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.985);
+      }
+    }
+
+    /* Rim light / kesan kaca */
+    .stage::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      border-radius: inherit;
+      pointer-events: none;
+      background:
+        radial-gradient(120% 55% at 50% -8%, rgba(255, 255, 255, 0.22), transparent 60%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent 16%);
+      mix-blend-mode: screen;
+      opacity: 0.55;
+    }
+
+    video,
+    canvas {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .vignette {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: radial-gradient(115% 95% at 50% 44%, transparent 52%, rgba(2, 5, 12, 0.55) 100%);
+    }
+
+    /* ---------- HUD kaca ---------- */
+    .hud {
+      position: absolute;
+      left: 0;
+      right: 0;
+      z-index: 5;
+      display: flex;
+      pointer-events: none;
+    }
+
+    .hud-top {
+      top: 0;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: clamp(10px, 2vw, 20px);
+    }
+
+    .hud-bottom {
+      bottom: 0;
+      justify-content: center;
+      padding: clamp(10px, 2vw, 20px);
+    }
+
+    .glass {
+      position: relative;
+      overflow: hidden;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      box-shadow:
+        0 10px 26px -14px rgba(0, 0, 0, 0.85),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+      backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    }
+
+    .glass::after {
+      content: "";
+      position: absolute;
+      inset: 1px 1px auto;
+      height: 40%;
+      z-index: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent);
+      opacity: 0.8;
+    }
+
+    .glass > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: clamp(8px, 1.2vw, 12px);
+      max-width: min(74%, 430px);
+      padding: clamp(7px, 1.1vw, 11px) clamp(12px, 1.8vw, 18px);
+      border-radius: var(--radius-sm);
+    }
+
+    .brand-dot {
+      flex: none;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.32);
+      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.06);
+      transition: background 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    body.is-live .brand-dot {
+      background: #46f5a0;
+      box-shadow: 0 0 12px rgba(70, 245, 160, 0.9), 0 0 0 4px rgba(70, 245, 160, 0.12);
+      animation: dot-pulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes dot-pulse {
+      50% { opacity: 0.55; }
+    }
+
+    .brand-text {
+      min-width: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(12px, 1.5vw, 16.5px);
+      font-weight: 650;
+      line-height: 1.15;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .brand h1 span {
+      color: var(--accent);
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      font-size: clamp(9.5px, 1.1vw, 11.5px);
+      line-height: 1.3;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge {
+      flex: none;
+      padding: clamp(6px, 0.9vw, 8px) clamp(10px, 1.4vw, 13px);
+      font-size: clamp(8.5px, 0.95vw, 10px);
+      font-weight: 650;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .status {
+      max-width: min(94%, 540px);
+      padding: clamp(8px, 1.2vw, 11px) clamp(14px, 2vw, 20px);
+      text-align: center;
+      font-size: clamp(10.5px, 1.25vw, 13px);
+      line-height: 1.35;
+      color: rgba(244, 248, 255, 0.94);
+      animation: toast-in 0.4s ease both;
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+    }
+
+    .status[hidden] {
+      display: none;
+    }
+
+    .status.error {
+      background: rgba(124, 20, 38, 0.46);
+      border-color: rgba(255, 143, 160, 0.45);
+      color: #ffe9ec;
+      box-shadow:
+        0 10px 26px -14px rgba(0, 0, 0, 0.85),
+        inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    }
+
+    /* ---------- Penyesuaian device ---------- */
+    @media (max-width: 640px) {
+      :root {
+        --glass-blur: 10px;
+      }
+
+      .orb {
+        filter: blur(48px);
+        opacity: 0.42;
+      }
+
+      .badge {
+        display: none;
+      }
+
+      .brand {
+        max-width: 100%;
+      }
+
+      .brand p {
+        display: none;
+      }
+    }
+
+    @media (max-height: 480px) and (orientation: landscape) {
+      .brand p {
+        display: none;
+      }
+
+      .status {
+        font-size: 10.5px;
+        padding: 6px 12px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .orb,
+      .stage,
+      .status,
+      body.is-live .brand-dot {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true">
+    <span class="orb orb--1"></span>
+    <span class="orb orb--2"></span>
+    <span class="orb orb--3"></span>
+  </div>
+
+  <main class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <header class="hud hud-top">
+      <div class="glass brand">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <div class="brand-text">
+          <h1>FingerCarousel<span>-MR</span></h1>
+          <p>Geser galeri dengan ujung telunjuk</p>
+        </div>
+      </div>
+      <div class="glass badge" aria-hidden="true">Mixed Reality</div>
+    </header>
+
+    <div class="hud hud-bottom">
+      <div class="glass status" id="status" role="status" aria-live="polite">
+        Menyiapkan kamera… izinkan akses kamera jika diminta.
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"></script>
+
+  <script>
+    /**
+     * FingerCarousel-MR
+     * Galeri mobil Mixed Reality: geser deretan gambar dengan ujung telunjuk
+     * di depan kamera. Deteksi tangan memakai MediaPipe Hands (21 landmark).
+     */
+    const HANDS_VERSION = "0.4.1675469240";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.getElementById("status");
+
+    canvas.width = 640;
+    canvas.height = 480;
+
+    const CARD_W = 180;
+    const CARD_H = 120;
+    const SPACING = 200;
+    const ROW_Y = canvas.height * 0.4;
+
+    const DRAG_START_THRESHOLD = 6; // px gerakan minimum sebelum drag dianggap mulai
+    const RELEASE_MARGIN = 90;      // px di atas/bawah baris kartu sebelum drag dilepas
+
+    const imagePaths = ['img1.jpg', 'img2.jpg', 'img3.jpeg', 'img4.jpg', 'img5.jpg', 'img6.jpg'];
+    const images = [];
+
+    imagePaths.forEach((src, i) => {
+      const img = new Image();
+      img.src = src;
+      images.push(img);
+    });
+
+    // Satu putaran penuh galeri: setelah kartu terakhir, kartu pertama muncul lagi
+    const RING_WIDTH = images.length * SPACING;
+
+    let scrollX = 0;
+    let targetScrollX = 0;
+
+    let latestResults = null;
+    let lastTimestamp = 0;
+    let statusCleared = false;
+    let hintTimer = null;
+
+    // State gestur
+    let isDragging = false;
+    let dragAnchorX = null;
+    let dragCardIndex = -1;
+    let prevTipX = null;
+
+    // Selalu mengembalikan nilai positif, termasuk untuk input negatif
+    function wrap(value) {
+      const remainder = value % RING_WIDTH;
+      return remainder < 0 ? remainder + RING_WIDTH : remainder;
+    }
+
+    function setStatus(message, isError = false) {
+      if (!message) {
+        statusEl.hidden = true;
+        return;
+      }
+      statusEl.textContent = message;
+      statusEl.classList.toggle("error", isError);
+      statusEl.hidden = false;
+    }
+
+    function dismissHint() {
+      if (hintTimer !== null) {
+        clearTimeout(hintTimer);
+        hintTimer = null;
+      }
+      if (!statusEl.classList.contains("error")) {
+        setStatus(null);
+      }
+    }
+
+    // Mengiterasi semua kartu yang terlihat, termasuk salinan hasil pembungkusan
+    // agar deretan gambar tampak berputar tanpa ujung.
+    function forEachVisibleCard(callback) {
+      const offset = wrap(scrollX);
+
+      for (let i = 0; i < images.length; i++) {
+        const base = i * SPACING - offset;
+
+        // Satu salinan ke kiri dan ke kanan cukup untuk menutup seluruh viewport
+        for (let copy = -1; copy <= 1; copy++) {
+          const x = base + copy * RING_WIDTH;
+          if (x + CARD_W <= 0 || x >= canvas.width) continue;
+          callback(i, x);
+        }
+      }
+    }
+
+    function getHoveredIndex(tipX, tipY) {
+      if (tipX === null || tipY === null) return -1;
+      if (tipY < ROW_Y || tipY > ROW_Y + CARD_H) return -1;
+
+      let hoveredIndex = -1;
+      forEachVisibleCard((i, x) => {
+        if (tipX >= x && tipX <= x + CARD_W) hoveredIndex = i;
+      });
+      return hoveredIndex;
+    }
+
+    function endDrag() {
+      isDragging = false;
+      dragAnchorX = null;
+      dragCardIndex = -1;
+      prevTipX = null;
+    }
+
+    function updateDragState(tipX, tipY, hoveredIndex) {
+      // Tangan hilang dari frame: reset total agar tidak melompat saat muncul lagi
+      if (tipX === null || tipY === null) {
+        endDrag();
+        return;
+      }
+
+      if (isDragging) {
+        const withinRow =
+          tipY >= ROW_Y - RELEASE_MARGIN &&
+          tipY <= ROW_Y + CARD_H + RELEASE_MARGIN;
+
+        if (!withinRow) {
+          endDrag();
+          return;
+        }
+
+        // Tanpa clamp: melewati ujung akan berputar ke sisi seberang
+        if (prevTipX !== null) {
+          targetScrollX -= tipX - prevTipX;
+        }
+        prevTipX = tipX;
+        return;
+      }
+
+      // Belum dragging: butuh hover pada kartu + gerakan melewati threshold
+      if (hoveredIndex === -1) {
+        dragAnchorX = null;
+        prevTipX = null;
+        return;
+      }
+
+      if (dragAnchorX === null) {
+        dragAnchorX = tipX;
+      }
+
+      if (Math.abs(tipX - dragAnchorX) > DRAG_START_THRESHOLD) {
+        isDragging = true;
+        dragCardIndex = hoveredIndex;
+        prevTipX = tipX;
+        dismissHint();
+      }
+    }
+
+    // Jalur rounded-rect dengan fallback untuk browser lama
+    function roundedRect(x, y, w, h, radius) {
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") {
+        ctx.roundRect(x, y, w, h, radius);
+        return;
+      }
+      const r = Math.min(radius, w / 2, h / 2);
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawImages(activeIndex) {
+      forEachVisibleCard((i, x) => {
+        const isActive = i === activeIndex;
+        const yOffset = isActive ? -30 : 0;
+        const scale = isActive ? 1.05 : 1;
+        const frameW = CARD_W + 12;
+        const frameH = CARD_H + 12;
+
+        ctx.save();
+        ctx.translate(x + CARD_W / 2, ROW_Y + CARD_H / 2 + yOffset);
+        ctx.scale(scale, scale);
+
+        // Alas kaca di belakang kartu
+        roundedRect(-frameW / 2, -frameH / 2, frameW, frameH, 20);
+        ctx.fillStyle = isActive ? "rgba(126, 231, 255, 0.18)" : "rgba(255, 255, 255, 0.08)";
+        ctx.fill();
+
+        // Gambar dengan sudut membulat
+        roundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 14);
+        ctx.save();
+        ctx.clip();
+        ctx.drawImage(images[i], -CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H);
+
+        // Kilau kaca di bagian atas gambar
+        const gloss = ctx.createLinearGradient(0, -CARD_H / 2, 0, -CARD_H / 2 + CARD_H * 0.5);
+        gloss.addColorStop(0, "rgba(255, 255, 255, 0.2)");
+        gloss.addColorStop(1, "rgba(255, 255, 255, 0)");
+        ctx.fillStyle = gloss;
+        ctx.fillRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H * 0.5);
+        ctx.restore();
+
+        // Garis tepi kaca
+        roundedRect(-frameW / 2, -frameH / 2, frameW, frameH, 20);
+        ctx.strokeStyle = isActive ? "rgba(126, 231, 255, 0.95)" : "rgba(255, 255, 255, 0.32)";
+        ctx.lineWidth = isActive ? 2 : 1;
+        ctx.stroke();
+
+        ctx.restore();
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Video dicerminkan seperti cermin
+      if (video.readyState >= 2) {
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+
+      let tipX = null;
+      let tipY = null;
+
+      const hand = latestResults &&
+        latestResults.multiHandLandmarks &&
+        latestResults.multiHandLandmarks[0];
+
+      if (hand) {
+        // Koordinat dicerminkan agar sesuai dengan tampilan mirror
+        const mirrored = hand.map(pt => ({ x: 1 - pt.x, y: pt.y, z: pt.z }));
+
+        const tip = mirrored[8]; // ujung telunjuk
+        tipX = tip.x * canvas.width;
+        tipY = tip.y * canvas.height;
+
+        drawConnectors(ctx, mirrored, HAND_CONNECTIONS, { color: 'rgba(126, 231, 255, 0.55)', lineWidth: 2 });
+        drawLandmarks(ctx, mirrored, { color: 'rgba(214, 245, 255, 0.9)', lineWidth: 1, radius: 3 });
+        drawLandmarks(ctx, [mirrored[8]], { color: '#7ee7ff', radius: 7 });
+      }
+
+      const hoveredIndex = getHoveredIndex(tipX, tipY);
+      updateDragState(tipX, tipY, hoveredIndex);
+
+      // Kartu yang sedang di-hover/di-drag tetap terangkat selama gesture berjalan
+      const activeIndex = isDragging ? dragCardIndex : hoveredIndex;
+      drawImages(activeIndex);
+    }
+
+    function renderLoop(timestamp) {
+      const dt = lastTimestamp === 0
+        ? 16.67
+        : Math.min(timestamp - lastTimestamp, 50);
+      lastTimestamp = timestamp;
+
+      // Smoothing berbasis waktu: konsisten di 30 fps maupun 60 fps
+      const smoothing = 1 - Math.pow(1 - 0.1, dt / 16.67);
+      scrollX += (targetScrollX - scrollX) * smoothing;
+      if (Math.abs(targetScrollX - scrollX) < 0.01) {
+        scrollX = targetScrollX;
+      }
+
+      // Normalisasi: tampilan tidak berubah karena posisi dihitung modulo
+      // RING_WIDTH, tapi nilai tidak membesar tanpa batas.
+      if (Math.abs(scrollX) >= RING_WIDTH) {
+        const shift = Math.floor(scrollX / RING_WIDTH) * RING_WIDTH;
+        scrollX -= shift;
+        targetScrollX -= shift;
+      }
+
+      draw();
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    function handleResults(results) {
+      latestResults = results;
+
+      if (!statusCleared) {
+        statusCleared = true;
+        document.body.classList.add("is-live");
+        setStatus("Arahkan telunjuk ke mobil, lalu geser ke kiri atau kanan.");
+        hintTimer = setTimeout(dismissHint, 7000);
+      }
+    }
+
+    const hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${HANDS_VERSION}/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+    hands.onResults(handleResults);
+
+    requestAnimationFrame(renderLoop);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus("Browser ini tidak mendukung akses kamera. Gunakan Chrome, Edge, atau Firefox terbaru.", true);
+    } else {
+      const camera = new Camera(video, {
+        onFrame: async () => {
+          try {
+            await hands.send({ image: video });
+          } catch (err) {
+            console.error("hands.send gagal:", err);
+          }
+        },
+        width: 640,
+        height: 480
+      });
+
+      camera.start().catch(err => {
+        console.error("Kamera gagal dimulai:", err);
+
+        let message = "Kamera tidak dapat diakses. Pastikan halaman dibuka lewat localhost/HTTPS dan kamera tidak dipakai aplikasi lain.";
+        if (err && err.name === "NotAllowedError") {
+          message = "Akses kamera ditolak. Izinkan kamera di pengaturan browser, lalu muat ulang halaman.";
+        } else if (err && err.name === "NotFoundError") {
+          message = "Kamera tidak ditemukan. Hubungkan kamera, lalu muat ulang halaman.";
+        }
+        setStatus(message, true);
+      });
+    }
+  </script>
+</body>
+</html>
