@@ -35,6 +35,8 @@ Singkatnya: **aplikasi Mixed Reality berbasis ML-powered computer vision**. Komp
 - **Umpan balik status** — pesan jelas jika kamera ditolak, tidak ditemukan, atau browser tidak mendukung.
 - **Tema liquid glass** — HUD berupa panel kaca (blur + rim light), kartu bergaris tepi kaca di canvas, glow lembut, dan latar orb yang bergerak pelan. Animasi dinonaktifkan otomatis saat `prefers-reduced-motion`.
 - **Responsif** — panggung kamera menjaga rasio 4:3, menyesuaikan lebar/tinggi layar, menghormati *safe area* perangkat ber-notch, dan mengecilkan teks pada layar sempit.
+- **Tajam di layar HiDPI** — backing store canvas mengikuti `devicePixelRatio` (maks 2×), sementara semua geometri dan hit-test tetap di ruang logis 640×480.
+- **Logika inti teruji** — matematika ring dan smoothing berbasis waktu adalah fungsi murni dengan unit test (Vitest).
 - **Mesin framework-free** — logika kamera, gesture, dan render tidak meng-import Vue, jadi bisa dipakai ulang oleh UI lain.
 
 ---
@@ -57,7 +59,7 @@ Singkatnya: **aplikasi Mixed Reality berbasis ML-powered computer vision**. Komp
 - **Vue 3 + Vite + TypeScript** untuk shell UI: layout, HUD, dan status.
 - **Canvas 2D** untuk render. Mesin carousel, gesture, dan pipeline kamera berada di `src/engine/` dan **tidak bergantung pada Vue**.
 - **[MediaPipe Hands](https://developers.google.com/mediapipe)** — model hand landmark detection.
-- `@mediapipe/drawing_utils` dan `@mediapipe/camera_utils`.
+- `@mediapipe/camera_utils` untuk loop kamera. Kerangka tangan digambar sendiri di Canvas (tanpa `drawing_utils`) agar tetap tajam di layar HiDPI.
 - Library MediaPipe dimuat via CDN jsDelivr dengan **versi di-pin** (tidak ikut berubah saat upstream update), jadi **butuh koneksi internet** saat runtime.
 - Rencana berikutnya: migrasi dari legacy Solutions ke `@mediapipe/tasks-vision` dengan model & wasm lokal.
 
@@ -80,6 +82,12 @@ Untuk memeriksa hasil produksi:
 ```bash
 npm run build
 npm run preview
+```
+
+Unit test untuk logika murni (geometri ring, smoothing, normalisasi):
+
+```bash
+npm test
 ```
 
 `legacy/index.html` adalah arsip versi satu-file sebelum refactor dan tidak dipakai lagi.
@@ -110,9 +118,13 @@ npm run preview
 │   ├── App.vue         # panggung kamera + HUD + status
 │   ├── config.ts       # konstanta carousel
 │   ├── engine/         # mesin carousel: kamera, gesture, render (framework-free)
+│   │   ├── carousel.ts # orkestrasi pipeline + render loop
+│   │   ├── geometry.ts # matematika ring & hit-test (murni)
+│   │   └── smoothing.ts # smoothing berbasis waktu & normalisasi (murni)
 │   ├── composables/    # jembatan Vue ↔ engine
 │   ├── styles/         # CSS global
 │   └── types/          # deklarasi MediaPipe legacy (temporer)
+├── tests/              # unit test Vitest untuk modul murni
 ├── public/             # aset gambar mobil
 ├── legacy/             # arsip versi satu-file sebelum refactor
 ├── netlify.toml        # konfigurasi build & deploy

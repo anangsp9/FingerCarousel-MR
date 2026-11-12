@@ -45,30 +45,5 @@ interface CameraInstance {
   stop(): void
 }
 
-interface DrawConnectorsOptions {
-  color?: string
-  lineWidth?: number
-}
-
-interface DrawLandmarksOptions {
-  color?: string
-  lineWidth?: number
-  radius?: number
-}
-
 declare const Hands: new (options: HandsOptions) => HandsInstance
 declare const Camera: new (video: HTMLVideoElement, options: CameraOptions) => CameraInstance
-declare const HAND_CONNECTIONS: unknown
-
-declare function drawConnectors(
-  ctx: CanvasRenderingContext2D,
-  landmarks: HandLandmarkPoint[],
-  connections: unknown,
-  options?: DrawConnectorsOptions,
-): void
-
-declare function drawLandmarks(
-  ctx: CanvasRenderingContext2D,
-  landmarks: HandLandmarkPoint[],
-  options?: DrawLandmarksOptions,
-): void
