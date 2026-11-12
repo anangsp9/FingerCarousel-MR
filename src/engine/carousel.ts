@@ -35,11 +35,15 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
   // nested draw helpers below.
   const ctx: CanvasRenderingContext2D = context
 
-  canvas.width = config.canvasWidth
-  canvas.height = config.canvasHeight
+  // Logical drawing space. All geometry and hit-testing use these units, while
+  // the backing store is sized to the CSS box times the device pixel ratio so
+  // the canvas stays sharp on HiDPI screens.
+  const CANVAS_W = config.canvasWidth
+  const CANVAS_H = config.canvasHeight
+  const MAX_DEVICE_PIXEL_RATIO = 2
 
   const { cardWidth: CARD_W, cardHeight: CARD_H, spacing: SPACING } = config
-  const ROW_Y = canvas.height * config.rowYRatio
+  const ROW_Y = CANVAS_H * config.rowYRatio
 
   // Satu putaran penuh galeri: setelah kartu terakhir, kartu pertama muncul lagi
   const RING_WIDTH = config.imagePaths.length * SPACING
@@ -68,6 +72,31 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
   let hands: HandsInstance | null = null
   let camera: CameraInstance | null = null
   let disposed = false
+  let lastDevicePixelRatio = 0
+  let resizeObserver: ResizeObserver | null = null
+
+  function applyCanvasScale(): void {
+    // Drawing keeps using the 640x480 logical space; this single transform maps
+    // it onto the device-pixel backing store.
+    ctx.setTransform(canvas.width / CANVAS_W, 0, 0, canvas.height / CANVAS_H, 0, 0)
+  }
+
+  function resizeCanvas(): void {
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO)
+    lastDevicePixelRatio = dpr
+
+    const width = Math.max(1, Math.round(rect.width * dpr))
+    const height = Math.max(1, Math.round(rect.height * dpr))
+    if (width === canvas.width && height === canvas.height) return
+
+    // Assigning width/height resets the context, so re-apply the scale after.
+    canvas.width = width
+    canvas.height = height
+    applyCanvasScale()
+  }
 
   // Selalu mengembalikan nilai positif, termasuk untuk input negatif
   function wrap(value: number): number {
@@ -94,7 +123,7 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
       // Satu salinan ke kiri dan ke kanan cukup untuk menutup seluruh viewport
       for (let copy = -1; copy <= 1; copy++) {
         const x = base + copy * RING_WIDTH
-        if (x + CARD_W <= 0 || x >= canvas.width) continue
+        if (x + CARD_W <= 0 || x >= CANVAS_W) continue
         callback(i, x)
       }
     }
@@ -162,6 +191,59 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
     }
   }
 
+  // Topologi 21 edge model tangan MediaPipe. Disimpan lokal supaya penggambaran
+  // memakai ruang logis 640x480: @mediapipe/drawing_utils mengalikan landmark
+  // ternormalisasi dengan ctx.canvas.width, sehingga rusak saat backing store
+  // diskalakan untuk HiDPI.
+  const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [5, 9], [9, 10], [10, 11], [11, 12],
+    [9, 13], [13, 14], [14, 15], [15, 16],
+    [13, 17], [17, 18], [18, 19], [19, 20],
+    [0, 17],
+  ]
+
+  function drawSkeleton(landmarks: HandLandmarkPoint[]): void {
+    ctx.save()
+    ctx.lineCap = "round"
+
+    ctx.strokeStyle = "rgba(126, 231, 255, 0.55)"
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    for (const [start, end] of HAND_CONNECTIONS) {
+      const from = landmarks[start]
+      const to = landmarks[end]
+      if (!from || !to) continue
+      ctx.moveTo(from.x * CANVAS_W, from.y * CANVAS_H)
+      ctx.lineTo(to.x * CANVAS_W, to.y * CANVAS_H)
+    }
+    ctx.stroke()
+
+    ctx.strokeStyle = "rgba(214, 245, 255, 0.9)"
+    ctx.fillStyle = "rgba(214, 245, 255, 0.9)"
+    ctx.lineWidth = 1
+    for (const point of landmarks) {
+      ctx.beginPath()
+      ctx.arc(point.x * CANVAS_W, point.y * CANVAS_H, 3, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    const tip = landmarks[8]
+    if (tip) {
+      ctx.strokeStyle = "#7ee7ff"
+      ctx.fillStyle = "#7ee7ff"
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.arc(tip.x * CANVAS_W, tip.y * CANVAS_H, 7, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    ctx.restore()
+  }
+
   // Jalur rounded-rect dengan fallback untuk browser lama
   function roundedRect(x: number, y: number, w: number, h: number, radius: number): void {
     if (typeof ctx.roundRect === "function") {
@@ -224,14 +306,14 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
   }
 
   function draw(): void {
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
 
     // Video dicerminkan seperti cermin
     if (video.readyState >= 2) {
       ctx.save()
-      ctx.translate(canvas.width, 0)
+      ctx.translate(CANVAS_W, 0)
       ctx.scale(-1, 1)
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      ctx.drawImage(video, 0, 0, CANVAS_W, CANVAS_H)
       ctx.restore()
     }
 
@@ -250,19 +332,9 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
 
       const tip = mirrored[8] // ujung telunjuk
       if (tip) {
-        tipX = tip.x * canvas.width
-        tipY = tip.y * canvas.height
-
-        drawConnectors(ctx, mirrored, HAND_CONNECTIONS, {
-          color: "rgba(126, 231, 255, 0.55)",
-          lineWidth: 2,
-        })
-        drawLandmarks(ctx, mirrored, {
-          color: "rgba(214, 245, 255, 0.9)",
-          lineWidth: 1,
-          radius: 3,
-        })
-        drawLandmarks(ctx, [tip], { color: "#7ee7ff", radius: 7 })
+        tipX = tip.x * CANVAS_W
+        tipY = tip.y * CANVAS_H
+        drawSkeleton(mirrored)
       }
     }
 
@@ -276,6 +348,12 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
 
   function renderLoop(timestamp: number): void {
     if (disposed) return
+
+    // Moving the window between monitors can change devicePixelRatio without
+    // resizing the element, so poll it here (cheap) instead of relying on
+    // ResizeObserver alone.
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO)
+    if (dpr !== lastDevicePixelRatio) resizeCanvas()
 
     const dt =
       lastTimestamp === 0 ? 16.67 : Math.min(timestamp - lastTimestamp, 50)
@@ -316,6 +394,10 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
 
   async function start(): Promise<void> {
     if (disposed) return
+
+    resizeCanvas()
+    resizeObserver = new ResizeObserver(resizeCanvas)
+    resizeObserver.observe(canvas)
 
     rafId = requestAnimationFrame(renderLoop)
 
@@ -374,6 +456,9 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
     disposed = true
 
     cancelAnimationFrame(rafId)
+
+    resizeObserver?.disconnect()
+    resizeObserver = null
 
     if (hintTimer !== null) {
       clearTimeout(hintTimer)

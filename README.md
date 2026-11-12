@@ -57,7 +57,7 @@ Singkatnya: **aplikasi Mixed Reality berbasis ML-powered computer vision**. Komp
 - **Vue 3 + Vite + TypeScript** untuk shell UI: layout, HUD, dan status.
 - **Canvas 2D** untuk render. Mesin carousel, gesture, dan pipeline kamera berada di `src/engine/` dan **tidak bergantung pada Vue**.
 - **[MediaPipe Hands](https://developers.google.com/mediapipe)** — model hand landmark detection.
-- `@mediapipe/drawing_utils` dan `@mediapipe/camera_utils`.
+- `@mediapipe/camera_utils` untuk loop kamera. Kerangka tangan digambar sendiri di Canvas (tanpa `drawing_utils`) agar tetap tajam di layar HiDPI.
 - Library MediaPipe dimuat via CDN jsDelivr dengan **versi di-pin** (tidak ikut berubah saat upstream update), jadi **butuh koneksi internet** saat runtime.
 - Rencana berikutnya: migrasi dari legacy Solutions ke `@mediapipe/tasks-vision` dengan model & wasm lokal.
 
