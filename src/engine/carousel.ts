@@ -7,6 +7,8 @@
  * layer can be replaced without changing any of this logic.
  */
 import { CAROUSEL_CONFIG, type CarouselConfig } from "../config"
+import { cardOrigins, hoveredIndexAt, type CardGeometry } from "./geometry"
+import { FRAME_MS, approach, clampDelta, normalizeRing } from "./smoothing"
 
 export interface CarouselOptions {
   video: HTMLVideoElement
@@ -47,6 +49,15 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
 
   // Satu putaran penuh galeri: setelah kartu terakhir, kartu pertama muncul lagi
   const RING_WIDTH = config.imagePaths.length * SPACING
+
+  const geometry: CardGeometry = {
+    cardWidth: CARD_W,
+    cardHeight: CARD_H,
+    spacing: SPACING,
+    ringWidth: RING_WIDTH,
+    viewportWidth: CANVAS_W,
+    rowY: ROW_Y,
+  }
 
   const images: HTMLImageElement[] = config.imagePaths.map((src) => {
     const img = new Image()
@@ -98,12 +109,6 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
     applyCanvasScale()
   }
 
-  // Selalu mengembalikan nilai positif, termasuk untuk input negatif
-  function wrap(value: number): number {
-    const remainder = value % RING_WIDTH
-    return remainder < 0 ? remainder + RING_WIDTH : remainder
-  }
-
   function dismissHint(): void {
     if (hintTimer !== null) {
       clearTimeout(hintTimer)
@@ -115,29 +120,13 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
   // Mengiterasi semua kartu yang terlihat, termasuk salinan hasil pembungkusan
   // agar deretan gambar tampak berputar tanpa ujung.
   function forEachVisibleCard(callback: (index: number, x: number) => void): void {
-    const offset = wrap(scrollX)
-
-    for (let i = 0; i < images.length; i++) {
-      const base = i * SPACING - offset
-
-      // Satu salinan ke kiri dan ke kanan cukup untuk menutup seluruh viewport
-      for (let copy = -1; copy <= 1; copy++) {
-        const x = base + copy * RING_WIDTH
-        if (x + CARD_W <= 0 || x >= CANVAS_W) continue
-        callback(i, x)
-      }
+    for (const card of cardOrigins(scrollX, images.length, geometry)) {
+      callback(card.index, card.x)
     }
   }
 
   function getHoveredIndex(tipX: number | null, tipY: number | null): number {
-    if (tipX === null || tipY === null) return -1
-    if (tipY < ROW_Y || tipY > ROW_Y + CARD_H) return -1
-
-    let hoveredIndex = -1
-    forEachVisibleCard((i, x) => {
-      if (tipX >= x && tipX <= x + CARD_W) hoveredIndex = i
-    })
-    return hoveredIndex
+    return hoveredIndexAt(tipX, tipY, scrollX, images.length, geometry)
   }
 
   function endDrag(): void {
@@ -355,24 +344,17 @@ export function createCarousel(options: CarouselOptions): CarouselHandle {
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO)
     if (dpr !== lastDevicePixelRatio) resizeCanvas()
 
-    const dt =
-      lastTimestamp === 0 ? 16.67 : Math.min(timestamp - lastTimestamp, 50)
+    const dt = lastTimestamp === 0 ? FRAME_MS : clampDelta(timestamp - lastTimestamp)
     lastTimestamp = timestamp
 
     // Smoothing berbasis waktu: konsisten di 30 fps maupun 60 fps
-    const smoothing = 1 - Math.pow(1 - config.smoothingFactor, dt / 16.67)
-    scrollX += (targetScrollX - scrollX) * smoothing
-    if (Math.abs(targetScrollX - scrollX) < 0.01) {
-      scrollX = targetScrollX
-    }
+    scrollX = approach(scrollX, targetScrollX, dt, config.smoothingFactor)
 
     // Normalisasi: tampilan tidak berubah karena posisi dihitung modulo
     // RING_WIDTH, tapi nilai tidak membesar tanpa batas.
-    if (Math.abs(scrollX) >= RING_WIDTH) {
-      const shift = Math.floor(scrollX / RING_WIDTH) * RING_WIDTH
-      scrollX -= shift
-      targetScrollX -= shift
-    }
+    const normalized = normalizeRing(scrollX, targetScrollX, RING_WIDTH)
+    scrollX = normalized.scrollX
+    targetScrollX = normalized.targetScrollX
 
     draw()
 
