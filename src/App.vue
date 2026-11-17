@@ -19,12 +19,6 @@ watch(
 </script>
 
 <template>
-  <div class="backdrop" aria-hidden="true">
-    <span class="orb orb--1"></span>
-    <span class="orb orb--2"></span>
-    <span class="orb orb--3"></span>
-  </div>
-
   <main class="stage">
     <video ref="video" autoplay playsinline muted></video>
     <canvas ref="canvas"></canvas>
